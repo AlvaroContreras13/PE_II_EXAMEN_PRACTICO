@@ -23,6 +23,6 @@ Anteriormente las tablas eran dinamicas en un 30%, ahora las tablas son 100% din
 
 # Cambio 2
 Ahora que las tablas son dinamicas se implmento la creacion de la matriz BCG por cada producto de acuerdo al resultado del cuadro BCG hecho en el cambio1, siendo esta la version 1.0.
-## 3. Matriz BCG (Gráfico)
+## 5. Matriz BCG (Gráfico)
 ![Matriz BCG](media/matrizbcg.PNG)
 
