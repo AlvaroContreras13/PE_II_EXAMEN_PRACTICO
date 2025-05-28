@@ -16,6 +16,8 @@ $db = $conexion->getConexion();
 <!DOCTYPE html>
 <html lang="es">
 <head>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
   <meta charset="UTF-8">
   <title>Valores</title>
   <link rel="stylesheet" href="../public/css/valores.css">
@@ -36,7 +38,7 @@ $db = $conexion->getConexion();
 
 </head>
 	
-	
+
 <body>
 	<!-- Notifications area -->
 	<section class="full-width container-notifications">
@@ -318,6 +320,78 @@ $db = $conexion->getConexion();
 }
 </style>
 
+<div style="margin-top: 50px;">
+  <h4 class="text-center">MATRIZ BCG</h4>
+  <canvas id="matrizBCG" width="600" height="400"></canvas>
+</div>
+
+<script>
+    // generar matriz bcg
+    function generarMatrizBCG() {
+    const ctx = document.getElementById("matrizBCG").getContext("2d");
+
+    const nombresProductos = getNombresProductos();
+    const tablaBCG = document.getElementById("tablaBCG");
+    const filas = tablaBCG.querySelectorAll("tbody tr");
+
+    const tcmVals = Array.from(filas[0].querySelectorAll("input")).map(i => parseFloat(i.value));
+    const prmVals = Array.from(filas[1].querySelectorAll("input")).map(i => parseFloat(i.value));
+    const vtasVals = Array.from(filas[2].querySelectorAll("input")).map(i => parseFloat(i.value));
+
+    const data = nombresProductos.map((nombre, i) => ({
+        x: prmVals[i],
+        y: tcmVals[i],
+        r: Math.max(5, (vtasVals[i] / 100) * 30), // tamaño relativo
+        nombre: nombre
+    }));
+
+    // Destruye gráfico anterior si ya existe
+    if (window.matrizChart) window.matrizChart.destroy();
+
+    window.matrizChart = new Chart(ctx, {
+        type: 'bubble',
+        data: {
+            datasets: [{
+                label: 'Productos',
+                data: data,
+                backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                borderColor: 'blue',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return context.raw.nombre + 
+                                   ` (PRM: ${context.raw.x}, TCM: ${context.raw.y})`;
+                        }
+                    }
+                },
+                legend: {
+                    display: false
+                }
+            },
+            scales: {
+                x: {
+                    title: { display: true, text: 'PRM' },
+                    min: 0,
+                    max: 2
+                },
+                y: {
+                    title: { display: true, text: 'TCM (%)' },
+                    min: 0,
+                    max: 20
+                }
+            }
+        }
+    });
+}
+
+    </script>
+
 <script>
 // Variables globales
 let contadorProducto = 1;
@@ -435,37 +509,94 @@ function actualizarTablaTCM() {
     componentHandler.upgradeDom();
 }
 
-// ========== TABLA BCG ==========
 function actualizarTablaBCG() {
     const tablaBCG = document.getElementById("tablaBCG");
     const numProductos = getNumeroProductos();
-    
+    const nombresProductos = getNombresProductos();
+
+    // Obtener % S/VTAS desde la tabla de ventas
+    const porcentajesVentas = Array.from(cuerpoVentas.querySelectorAll(".porcentaje")).map(td =>
+        td.textContent.replace('%', '').trim()
+    );
+
+    // Obtener tasas TCM desde la tabla TCM
+    const cuerpoTCM = document.getElementById("cuerpoTCM");
+    const filasTCM = Array.from(cuerpoTCM.querySelectorAll("tr"));
+    const tcmCalculado = [];
+
+    for (let i = 0; i < numProductos; i++) {
+        let suma = 0;
+        let cantidad = 0;
+
+        for (const fila of filasTCM) {
+            const celda = fila.querySelectorAll("td")[i + 1]; // columna del producto
+            const input = celda ? celda.querySelector("input") : null;
+            const valor = input ? parseFloat(input.value) : 0;
+
+            if (!isNaN(valor)) {
+                suma += valor;
+                cantidad++;
+            }
+        }
+
+        const promedio = cantidad > 0 ? suma / cantidad : 0;
+        const limitado = Math.min(promedio, 20); // máximo 20%
+        tcmCalculado.push(limitado.toFixed(2));
+    }
+
+    // Obtener PRM desde tabla de competencia (mayor / venta)
+    const tablasCompetencia = document.querySelectorAll(".tabla-competencia");
+    const inputsVentas = Array.from(cuerpoVentas.querySelectorAll("input"));
+    const prmCalculado = [];
+
+    for (let i = 0; i < numProductos; i++) {
+        const venta = parseFloat(inputsVentas[i]?.value || 0);
+        const tabla = tablasCompetencia[i];
+        const inputMayor = tabla?.querySelector(".input-mayor");
+        const mayor = inputMayor ? parseFloat(inputMayor.value) : 0;
+
+        let prm = 0;
+        if (venta !== 0) {
+            const razon = mayor / venta;
+            prm = razon > 2 ? 2 : razon;
+        }
+
+        prmCalculado.push(prm.toFixed(2));
+    }
+
     // Crear encabezados
     tablaBCG.querySelector("thead").innerHTML = `
         <tr>
             <th>BCG</th>
-            ${getNombresProductos().map(p => `<th>${p}</th>`).join("")}
+            ${nombresProductos.map(p => `<th>${p}</th>`).join("")}
         </tr>
     `;
-    
+
     // Crear cuerpo
     tablaBCG.querySelector("tbody").innerHTML = `
         <tr>
             <td>TCM</td>
-            ${Array(numProductos).fill('<td><input type="number" step="0.01" min="0" max="100" value="3.00" class="mdl-textfield__input" style="width: 70px;">%</td>').join("")}
+            ${tcmCalculado.map(v => `<td><input type="number" value="${v}" class="mdl-textfield__input" style="width: 70px;" readonly>%</td>`).join("")}
         </tr>
         <tr>
             <td>PRM</td>
-            ${Array(numProductos).fill('<td><input type="number" step="0.01" min="0" max="100" value="2.00" class="mdl-textfield__input" style="width: 70px;"></td>').join("")}
+            ${prmCalculado.map(v => `<td><input type="number" value="${v}" class="mdl-textfield__input" style="width: 70px;" readonly></td>`).join("")}
         </tr>
         <tr>
             <td>% S/VTAS</td>
-            ${Array(numProductos).fill('<td><input type="number" step="0.01" min="0" max="100" value="20" class="mdl-textfield__input" style="width: 70px;">%</td>').join("")}
+            ${porcentajesVentas.map(p => `<td><input type="number" value="${p}" class="mdl-textfield__input" style="width: 70px;" readonly>%</td>`).join("")}
         </tr>
     `;
-    
+
     componentHandler.upgradeDom();
+
+    generarMatrizBCG();
+
 }
+
+
+
+
 
 // ========== TABLA DEMANDA GLOBAL ==========
 function actualizarTablaDemanda() {
@@ -497,11 +628,15 @@ function actualizarTablaCompetidores() {
     const contenedor = document.getElementById("contenedorNivelesCompetencia");
     contenedor.innerHTML = "";
 
-    getNombresProductos().forEach((producto, index) => {
-        const productoNum = index + 1;
+    const productos = getNombresProductos();
+    const inputsVentas = Array.from(cuerpoVentas.querySelectorAll("input"));
+
+    productos.forEach((producto, index) => {
+        const valorEmpresa = parseFloat(inputsVentas[index]?.value || 0);
 
         const tabla = document.createElement("table");
-        tabla.className = "mdl-data-table mdl-js-data-table";
+        tabla.className = "mdl-data-table mdl-js-data-table tabla-competencia";
+        tabla.dataset.index = index;
         tabla.style.minWidth = "200px";
 
         tabla.innerHTML = `
@@ -511,7 +646,7 @@ function actualizarTablaCompetidores() {
                 </tr>
                 <tr>
                     <th>EMPRESA</th>
-                    <th><input type="number" value="0" class="mdl-textfield__input" style="width: 70px;"></th>
+                    <th><input type="number" value="${valorEmpresa}" class="mdl-textfield__input input-empresa" style="width: 70px;"></th>
                 </tr>
                 <tr>
                     <th>Competidor</th>
@@ -522,12 +657,12 @@ function actualizarTablaCompetidores() {
                 ${Array.from({ length: 9 }, (_, i) => `
                     <tr>
                         <td>${producto.substring(0,2)}-${i + 1}</td>
-                        <td><input type="number" class="mdl-textfield__input" style="width: 70px;"></td>
+                        <td><input type="number" class="mdl-textfield__input input-competidor" style="width: 70px;"></td>
                     </tr>
                 `).join("")}
                 <tr>
                     <td><strong>Mayor</strong></td>
-                    <td><input type="number" value="0" class="mdl-textfield__input" style="width: 70px;"></td>
+                    <td><input type="number" class="mdl-textfield__input input-mayor" style="width: 70px;" readonly></td>
                 </tr>
             </tbody>
         `;
@@ -536,7 +671,39 @@ function actualizarTablaCompetidores() {
     });
 
     componentHandler.upgradeDom();
+    registrarEventosCompetencia();   // Reasigna los eventos
+    actualizarTablaBCG(); 
 }
+
+function registrarEventosCompetencia() {
+    const tablas = document.querySelectorAll(".tabla-competencia");
+
+    tablas.forEach(tabla => {
+        const inputCompetidores = tabla.querySelectorAll(".input-competidor");
+        const inputMayor = tabla.querySelector(".input-mayor");
+
+        const actualizarMayor = () => {
+            let max = 0;
+            inputCompetidores.forEach(input => {
+                const val = parseFloat(input.value);
+                if (!isNaN(val) && val > max) {
+                    max = val;
+                }
+            });
+            inputMayor.value = max;
+
+            // 🔁 Muy importante: actualizar también la tabla BCG cuando cambia el mayor
+            actualizarTablaBCG();
+        };
+
+        // Listeners por cada competidor
+        inputCompetidores.forEach(input => input.addEventListener("input", actualizarMayor));
+
+        // Inicializar mayor al crear
+        actualizarMayor();
+    });
+}
+
 
 // ========== EVENT LISTENERS ==========
 document.getElementById("btnAgregarProducto").addEventListener("click", agregarFila);
@@ -561,5 +728,24 @@ for (let i = 0; i < 5; i++) {
     agregarFila([500, 30, 2000, 10, 10][i]);
 }
 </script>
+
+<script>
+    // Escuchar cambios en inputs de TCM para actualizar BCG automáticamente
+document.getElementById("tablaTCM").addEventListener("input", function (e) {
+    if (e.target.tagName === "INPUT") {
+        actualizarTablaBCG();
+    }
+});
+
+
+// Escuchar cambios en los inputs de ventas para actualizar tabla de competidores
+cuerpoVentas.addEventListener("input", function (e) {
+    if (e.target && e.target.classList.contains("venta-input")) {
+        actualizarTablaCompetidores();
+    }
+});
+
+    </script>
+
 </body>
 </html>
